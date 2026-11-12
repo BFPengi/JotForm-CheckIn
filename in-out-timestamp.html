@@ -6,68 +6,54 @@
 <title>In / Out Time Stamp</title>
 <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 <style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 8px; background: transparent; }
-  .row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; min-height: 42px; }
-  button {
-    padding: 10px 0; font-size: 16px; font-weight: bold;
-    border: none; border-radius: 6px; color: #fff; cursor: pointer;
-  }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 4px; background: transparent; }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; height: 52px; }
+  button { border: none; border-radius: 6px; color: #fff; cursor: pointer; font-weight: bold; }
   button:hover { opacity: 0.9; }
-  .main { width: 90px; }
+  .sq { width: 52px; height: 52px; font-size: 14px; flex-shrink: 0; }
   #inBtn  { background: #2e7d32; }
   #outBtn { background: #c62828; }
-  .time { font-size: 15px; color: #333; }
-  .empty { color: #999; font-style: italic; }
-  .confirm { display: none; align-items: center; gap: 8px; font-size: 14px; color: #333; }
-  .confirm.show { display: flex; }
-  .confirm button { padding: 6px 12px; font-size: 14px; }
-  .yes { background: #1565c0; }
-  .no  { background: #888; }
-  #clearBtn {
-    padding: 4px 10px; font-size: 12px; font-weight: normal;
-    background: #eee; color: #555;
-  }
+  .time { font-size: 14px; color: #333; }
+  .menu { display: none; gap: 6px; }
+  .menu.show { display: flex; }
+  .menu button { padding: 8px 12px; font-size: 13px; }
+  .update { background: #1565c0; }
+  .clear  { background: #757575; }
 </style>
 </head>
 <body>
 
 <div class="row">
-  <button id="inBtn" class="main" type="button">IN</button>
-  <span id="inTime" class="time empty">Not recorded</span>
-  <span id="inConfirm" class="confirm">
-    Overwrite?
-    <button type="button" class="yes" data-key="in">Yes</button>
-    <button type="button" class="no" data-key="in">No</button>
+  <button id="inBtn" class="sq" type="button">IN</button>
+  <span id="inTime" class="time"></span>
+  <span id="inMenu" class="menu">
+    <button type="button" class="update" data-key="in">Update</button>
+    <button type="button" class="clear" data-key="in">Clear</button>
   </span>
 </div>
 
 <div class="row">
-  <button id="outBtn" class="main" type="button">OUT</button>
-  <span id="outTime" class="time empty">Not recorded</span>
-  <span id="outConfirm" class="confirm">
-    Overwrite?
-    <button type="button" class="yes" data-key="out">Yes</button>
-    <button type="button" class="no" data-key="out">No</button>
-  </span>
-</div>
-
-<div class="row">
-  <button id="clearBtn" type="button">Clear</button>
-  <span id="clearConfirm" class="confirm">
-    Clear both times?
-    <button type="button" class="yes" data-key="clear">Yes</button>
-    <button type="button" class="no" data-key="clear">No</button>
+  <button id="outBtn" class="sq" type="button">OUT</button>
+  <span id="outTime" class="time"></span>
+  <span id="outMenu" class="menu">
+    <button type="button" class="update" data-key="out">Update</button>
+    <button type="button" class="clear" data-key="out">Clear</button>
   </span>
 </div>
 
 <script>
   var times = { in: "", out: "" };
 
+  // Format: h:mm am/pm mmm d, yyyy  (e.g. 1:05 pm Nov 11, 2026)
   function now() {
-    return new Date().toLocaleString("en-US", {
-      month: "2-digit", day: "2-digit", year: "numeric",
-      hour: "numeric", minute: "2-digit", second: "2-digit"
-    });
+    var d = new Date();
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var h = d.getHours();
+    var ampm = h >= 12 ? "pm" : "am";
+    h = h % 12 || 12;
+    var mm = ("0" + d.getMinutes()).slice(-2);
+    return h + ":" + mm + " " + ampm + " " +
+           months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
   }
 
   // The text that gets saved in the submission
@@ -75,62 +61,82 @@
     return "In: " + (times.in || "—") + " | Out: " + (times.out || "—");
   }
 
-  function show(id, value) {
-    var el = document.getElementById(id);
-    el.textContent = value || "Not recorded";
-    el.className = value ? "time" : "time empty";
+  function el(id) { return document.getElementById(id); }
+
+  function render(key) {
+    var t = el(key + "Time");
+    t.textContent = times[key];
   }
 
-  function hideConfirm(key) {
-    document.getElementById(key + "Confirm").classList.remove("show");
+  function closeMenu(key) {
+    el(key + "Menu").classList.remove("show");
+    el(key + "Time").style.display = "";
   }
 
-  function update() {
-    show("inTime", times.in);
-    show("outTime", times.out);
+  function openMenu(key) {
+    el(key + "Time").style.display = "none";
+    el(key + "Menu").classList.add("show");
+  }
+
+  function save() {
+    render("in");
+    render("out");
     if (window.JFCustomWidget) {
       JFCustomWidget.sendData({ value: resultText() });
     }
   }
 
-  // First tap records the time; if a time already exists, ask before replacing it
-  function stamp(key) {
-    if (times[key]) {
-      document.getElementById(key + "Confirm").classList.add("show");
-    } else {
+  // First tap records the time. Once a time is recorded it is locked:
+  // tapping again only opens Update / Clear (tap the button again to cancel).
+  function tap(key) {
+    if (!times[key]) {
       times[key] = now();
-      update();
+      save();
+    } else if (el(key + "Menu").classList.contains("show")) {
+      closeMenu(key);
+    } else {
+      openMenu(key);
     }
   }
 
-  document.getElementById("inBtn").onclick  = function () { stamp("in"); };
-  document.getElementById("outBtn").onclick = function () { stamp("out"); };
-  document.getElementById("clearBtn").onclick = function () {
-    if (times.in || times.out) {
-      document.getElementById("clearConfirm").classList.add("show");
-    }
-  };
+  el("inBtn").onclick  = function () { tap("in"); };
+  el("outBtn").onclick = function () { tap("out"); };
 
-  // Yes / No buttons on the confirmation prompts
-  document.querySelectorAll(".yes").forEach(function (btn) {
-    btn.onclick = function () {
-      var key = btn.getAttribute("data-key");
-      if (key === "clear") { times.in = ""; times.out = ""; }
-      else { times[key] = now(); }
-      hideConfirm(key);
-      update();
+  document.querySelectorAll(".update").forEach(function (b) {
+    b.onclick = function () {
+      var key = b.getAttribute("data-key");
+      times[key] = now();
+      closeMenu(key);
+      save();
     };
   });
-  document.querySelectorAll(".no").forEach(function (btn) {
-    btn.onclick = function () { hideConfirm(btn.getAttribute("data-key")); };
+  document.querySelectorAll(".clear").forEach(function (b) {
+    b.onclick = function () {
+      var key = b.getAttribute("data-key");
+      times[key] = "";
+      closeMenu(key);
+      save();
+    };
   });
 
-  JFCustomWidget.subscribe("ready", function () {
-    JFCustomWidget.requestFrameResize({ height: 170 });
+  // When a submission is reopened (e.g. from Tables), Jotform passes the
+  // saved value back. Restore the locked times from it.
+  function restore(saved) {
+    if (!saved || typeof saved !== "string") return;
+    var m = saved.match(/In:\s*(.*?)\s*\|\s*Out:\s*(.*)$/);
+    if (!m) return;
+    times.in  = (m[1] && m[1].trim() !== "—") ? m[1].trim() : "";
+    times.out = (m[2] && m[2].trim() !== "—") ? m[2].trim() : "";
+    save();
+  }
+
+  JFCustomWidget.subscribe("ready", function (data) {
+    restore(data && data.value);
+    JFCustomWidget.requestFrameResize({ height: 130 });
 
     JFCustomWidget.subscribe("submit", function () {
       JFCustomWidget.sendSubmit({
-        // valid only if at least one button was tapped, so "Required" works
+        // valid only if at least one time is recorded, so "Required" works
         valid: !!(times.in || times.out),
         value: resultText()
       });
