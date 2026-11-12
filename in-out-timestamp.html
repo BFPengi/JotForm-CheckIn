@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>In / Out Time Stamp</title>
+<script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 8px; background: transparent; }
+  .row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  button {
+    width: 90px; padding: 10px 0; font-size: 16px; font-weight: bold;
+    border: none; border-radius: 6px; color: #fff; cursor: pointer;
+  }
+  #inBtn  { background: #2e7d32; }
+  #outBtn { background: #c62828; }
+  button:hover { opacity: 0.9; }
+  .time { font-size: 15px; color: #333; }
+  .empty { color: #999; font-style: italic; }
+  #clearBtn {
+    width: auto; padding: 4px 10px; font-size: 12px; font-weight: normal;
+    background: #eee; color: #555;
+  }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <button id="inBtn" type="button">IN</button>
+  <span id="inTime" class="time empty">Not recorded</span>
+</div>
+<div class="row">
+  <button id="outBtn" type="button">OUT</button>
+  <span id="outTime" class="time empty">Not recorded</span>
+</div>
+<button id="clearBtn" type="button">Clear</button>
+
+<script>
+  var times = { in: "", out: "" };
+
+  function now() {
+    return new Date().toLocaleString("en-US", {
+      month: "2-digit", day: "2-digit", year: "numeric",
+      hour: "numeric", minute: "2-digit", second: "2-digit"
+    });
+  }
+
+  // The text that gets saved in the submission
+  function resultText() {
+    return "In: " + (times.in || "—") + " | Out: " + (times.out || "—");
+  }
+
+  function show(id, value) {
+    var el = document.getElementById(id);
+    el.textContent = value || "Not recorded";
+    el.className = value ? "time" : "time empty";
+  }
+
+  function update() {
+    show("inTime", times.in);
+    show("outTime", times.out);
+    // keep the form's copy of the value current (used by conditions/calculations)
+    if (window.JFCustomWidget) {
+      JFCustomWidget.sendData({ value: resultText() });
+    }
+  }
+
+  document.getElementById("inBtn").onclick  = function () { times.in  = now(); update(); };
+  document.getElementById("outBtn").onclick = function () { times.out = now(); update(); };
+  document.getElementById("clearBtn").onclick = function () { times.in = ""; times.out = ""; update(); };
+
+  JFCustomWidget.subscribe("ready", function () {
+    JFCustomWidget.requestFrameResize({ height: 150 });
+
+    JFCustomWidget.subscribe("submit", function () {
+      JFCustomWidget.sendSubmit({
+        // valid only if at least one button was tapped, so "Required" works
+        valid: !!(times.in || times.out),
+        value: resultText()
+      });
+    });
+  });
+</script>
+</body>
+</html>
