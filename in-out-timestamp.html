@@ -7,18 +7,24 @@
 <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 <style>
   body { font-family: Arial, sans-serif; margin: 0; padding: 8px; background: transparent; }
-  .row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; min-height: 42px; }
   button {
-    width: 90px; padding: 10px 0; font-size: 16px; font-weight: bold;
+    padding: 10px 0; font-size: 16px; font-weight: bold;
     border: none; border-radius: 6px; color: #fff; cursor: pointer;
   }
+  button:hover { opacity: 0.9; }
+  .main { width: 90px; }
   #inBtn  { background: #2e7d32; }
   #outBtn { background: #c62828; }
-  button:hover { opacity: 0.9; }
   .time { font-size: 15px; color: #333; }
   .empty { color: #999; font-style: italic; }
+  .confirm { display: none; align-items: center; gap: 8px; font-size: 14px; color: #333; }
+  .confirm.show { display: flex; }
+  .confirm button { padding: 6px 12px; font-size: 14px; }
+  .yes { background: #1565c0; }
+  .no  { background: #888; }
   #clearBtn {
-    width: auto; padding: 4px 10px; font-size: 12px; font-weight: normal;
+    padding: 4px 10px; font-size: 12px; font-weight: normal;
     background: #eee; color: #555;
   }
 </style>
@@ -26,14 +32,33 @@
 <body>
 
 <div class="row">
-  <button id="inBtn" type="button">IN</button>
+  <button id="inBtn" class="main" type="button">IN</button>
   <span id="inTime" class="time empty">Not recorded</span>
+  <span id="inConfirm" class="confirm">
+    Overwrite?
+    <button type="button" class="yes" data-key="in">Yes</button>
+    <button type="button" class="no" data-key="in">No</button>
+  </span>
 </div>
+
 <div class="row">
-  <button id="outBtn" type="button">OUT</button>
+  <button id="outBtn" class="main" type="button">OUT</button>
   <span id="outTime" class="time empty">Not recorded</span>
+  <span id="outConfirm" class="confirm">
+    Overwrite?
+    <button type="button" class="yes" data-key="out">Yes</button>
+    <button type="button" class="no" data-key="out">No</button>
+  </span>
 </div>
-<button id="clearBtn" type="button">Clear</button>
+
+<div class="row">
+  <button id="clearBtn" type="button">Clear</button>
+  <span id="clearConfirm" class="confirm">
+    Clear both times?
+    <button type="button" class="yes" data-key="clear">Yes</button>
+    <button type="button" class="no" data-key="clear">No</button>
+  </span>
+</div>
 
 <script>
   var times = { in: "", out: "" };
@@ -56,21 +81,52 @@
     el.className = value ? "time" : "time empty";
   }
 
+  function hideConfirm(key) {
+    document.getElementById(key + "Confirm").classList.remove("show");
+  }
+
   function update() {
     show("inTime", times.in);
     show("outTime", times.out);
-    // keep the form's copy of the value current (used by conditions/calculations)
     if (window.JFCustomWidget) {
       JFCustomWidget.sendData({ value: resultText() });
     }
   }
 
-  document.getElementById("inBtn").onclick  = function () { times.in  = now(); update(); };
-  document.getElementById("outBtn").onclick = function () { times.out = now(); update(); };
-  document.getElementById("clearBtn").onclick = function () { times.in = ""; times.out = ""; update(); };
+  // First tap records the time; if a time already exists, ask before replacing it
+  function stamp(key) {
+    if (times[key]) {
+      document.getElementById(key + "Confirm").classList.add("show");
+    } else {
+      times[key] = now();
+      update();
+    }
+  }
+
+  document.getElementById("inBtn").onclick  = function () { stamp("in"); };
+  document.getElementById("outBtn").onclick = function () { stamp("out"); };
+  document.getElementById("clearBtn").onclick = function () {
+    if (times.in || times.out) {
+      document.getElementById("clearConfirm").classList.add("show");
+    }
+  };
+
+  // Yes / No buttons on the confirmation prompts
+  document.querySelectorAll(".yes").forEach(function (btn) {
+    btn.onclick = function () {
+      var key = btn.getAttribute("data-key");
+      if (key === "clear") { times.in = ""; times.out = ""; }
+      else { times[key] = now(); }
+      hideConfirm(key);
+      update();
+    };
+  });
+  document.querySelectorAll(".no").forEach(function (btn) {
+    btn.onclick = function () { hideConfirm(btn.getAttribute("data-key")); };
+  });
 
   JFCustomWidget.subscribe("ready", function () {
-    JFCustomWidget.requestFrameResize({ height: 150 });
+    JFCustomWidget.requestFrameResize({ height: 170 });
 
     JFCustomWidget.subscribe("submit", function () {
       JFCustomWidget.sendSubmit({
