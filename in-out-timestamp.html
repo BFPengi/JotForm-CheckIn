@@ -26,6 +26,7 @@
   .update { background: #1565c0; }
   .clear  { background: #757575; }
   .edit   { background: #ef6c00; }
+  .addrem { background: #6a1b9a; }
   .save   { background: #2e7d32; }
   .cancel { background: #9e9e9e; }
   .menu input[type=datetime-local] { font-size: 14px; padding: 6px; border: 1px solid #bbb; border-radius: 6px; }
@@ -43,6 +44,7 @@
   <span id="inMenu" class="menu">
     <button type="button" class="update" data-key="in">Update</button>
     <button type="button" class="edit" data-key="in">Edit</button>
+    <button type="button" id="addRemBtn" class="addrem">Reminder</button>
     <button type="button" class="clear" data-key="in">Clear</button>
   </span>
   <span id="inEdit" class="menu">
@@ -101,6 +103,7 @@
       .split(/[\n,]/)
       .map(function (s) { return s.trim(); })
       .filter(function (s) { return s && s.toLowerCase() !== "none"; });
+    el("addRemBtn").style.display = cfg.reminders.length ? "" : "none";
     el("inBtn").textContent  = cfg.inLabel;
     el("outBtn").textContent = cfg.outLabel;
   }
@@ -186,9 +189,13 @@
   }
 
   /* ---------- Reminder choice (after IN) ---------- */
-  function showReminderChoices() {
+  var pickCancelable = false;   // true when opened later from the IN menu
+
+  function showReminderChoices(cancelable) {
+    pickCancelable = !!cancelable;
     var m = el("pickMenu");
-    m.innerHTML = '<span class="prompt">Check-out reminder?</span>';
+    m.innerHTML = '<span class="prompt">' +
+      (cancelable && reminder ? "Change check-out reminder?" : "Check-out reminder?") + '</span>';
     cfg.reminders.concat(["None"]).forEach(function (opt) {
       var b = document.createElement("button");
       b.type = "button";
@@ -201,8 +208,19 @@
       };
       m.appendChild(b);
     });
+    if (cancelable) {
+      var c = document.createElement("button");
+      c.type = "button";
+      c.className = "cancel";
+      c.textContent = "Cancel";
+      c.onclick = function () { hideAllMenus(); render(); };
+      m.appendChild(c);
+    }
     showMenu("pickMenu");
   }
+
+  // Add or change a reminder after checking in (IN menu > Reminder)
+  el("addRemBtn").onclick = function () { showReminderChoices(true); };
 
   /* ---------- Reminder confirm (at OUT) ---------- */
   function showReminderConfirm() {
@@ -224,7 +242,10 @@
 
   /* ---------- Button taps ---------- */
   el("inBtn").onclick = function () {
-    if (el("pickMenu").classList.contains("show")) return;          // must pick a reminder first
+    if (el("pickMenu").classList.contains("show")) {
+      if (pickCancelable) { hideAllMenus(); render(); }               // late add: tap IN to cancel
+      return;                                                         // at check-in: must pick first
+    }
     if (!times.in) {
       times.in = now();
       save();
