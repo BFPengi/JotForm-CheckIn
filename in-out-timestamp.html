@@ -117,8 +117,11 @@
   function resultText() {
     var lines = [];
     if (times.out) lines.push(cfg.outLabel + ": " + times.out);
+    // Completed reminder goes last (third line) and stays with this submission,
+    // even if the form's reminder options change later
     if (times.in)  lines.push(cfg.inLabel + ": " + times.in);
-    // Pending reminder is saved so it survives reopening; once checked off it is left out
+    if (reminder && times.out) lines.push("✓ " + reminder);
+    // Pending reminder is saved so it survives reopening
     if (reminder && times.in && !times.out) lines.push("Reminder: " + reminder);
     return lines.join("\n");
   }
@@ -263,7 +266,8 @@
     if (!saved || typeof saved !== "string") return;
     times.in  = grab(saved, [cfg.inLabel, "In"]);
     times.out = grab(saved, [cfg.outLabel, "Out"]);
-    reminder  = grab(saved, ["Reminder"]);
+    var done  = saved.match(/(?:^|\n)✓\s*([^\n\r]*)/);
+    reminder  = done ? done[1].trim() : grab(saved, ["Reminder"]);
     save();
   }
 
