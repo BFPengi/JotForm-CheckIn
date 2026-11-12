@@ -57,8 +57,12 @@
   }
 
   // The text that gets saved in the submission
+  // Blank until a button is used. When OUT is recorded, it goes on top.
   function resultText() {
-    return "In: " + (times.in || "—") + " | Out: " + (times.out || "—");
+    var lines = [];
+    if (times.out) lines.push("Out: " + times.out);
+    if (times.in)  lines.push("In: " + times.in);
+    return lines.join("\n");
   }
 
   function el(id) { return document.getElementById(id); }
@@ -123,10 +127,14 @@
   // saved value back. Restore the locked times from it.
   function restore(saved) {
     if (!saved || typeof saved !== "string") return;
-    var m = saved.match(/In:\s*(.*?)\s*\|\s*Out:\s*(.*)$/);
-    if (!m) return;
-    times.in  = (m[1] && m[1].trim() !== "—") ? m[1].trim() : "";
-    times.out = (m[2] && m[2].trim() !== "—") ? m[2].trim() : "";
+    // Works with both the new layout and older "In: x | Out: y" values
+    function grab(label) {
+      var m = saved.match(new RegExp(label + ":\\s*([^|\\n\\r]*)"));
+      var v = m ? m[1].trim() : "";
+      return v === "—" ? "" : v;
+    }
+    times.in  = grab("In");
+    times.out = grab("Out");
     save();
   }
 
