@@ -14,7 +14,10 @@
   #inBtn  { background: #2e7d32; }
   #outBtn { background: #c62828; }
   .time { font-size: 14px; color: #333; }
+  .info { display: flex; flex-direction: column; gap: 2px; }
   .note { font-size: 13px; color: #8a6d00; font-style: italic; }
+  .note:empty { display: none; }
+  .check { color: #1b7a3a; font-style: normal; font-weight: bold; margin-right: 4px; }
   .menu { display: none; flex-wrap: wrap; gap: 6px; flex: 1; }
   .menu.show { display: flex; }
   .menu button { padding: 8px 12px; font-size: 13px; }
@@ -40,8 +43,10 @@
 
 <div class="row">
   <button id="outBtn" class="sq" type="button">OUT</button>
-  <span id="outTime" class="time"></span>
-  <span id="outNote" class="note"></span>
+  <span id="outInfo" class="info">
+    <span id="outTime" class="time"></span>
+    <span id="outNote" class="note"></span>
+  </span>
   <span id="outMenu" class="menu">
     <button type="button" class="update" data-key="out">Update</button>
     <button type="button" class="clear" data-key="out">Clear</button>
@@ -111,7 +116,8 @@
     var lines = [];
     if (times.out) lines.push(cfg.outLabel + ": " + times.out);
     if (times.in)  lines.push(cfg.inLabel + ": " + times.in);
-    if (reminder && (times.in || times.out)) lines.push("Reminder: " + reminder);
+    // Pending reminder is saved so it survives reopening; once checked off it is left out
+    if (reminder && times.in && !times.out) lines.push("Reminder: " + reminder);
     return lines.join("\n");
   }
 
@@ -119,14 +125,24 @@
   function hideAllMenus() {
     ["inMenu", "outMenu", "pickMenu", "remindMenu"].forEach(function (id) { el(id).classList.remove("show"); });
     el("inTime").style.display = "";
-    el("outTime").style.display = "";
+    el("outInfo").style.display = "";
   }
 
   function render() {
     el("inTime").textContent  = times.in;
     el("outTime").textContent = times.out;
-    // Pending reminder shown on the OUT row until check-out is done
-    el("outNote").textContent = (reminder && times.in && !times.out) ? "Reminder: " + reminder : "";
+    // OUT row note: pending reminder before check-out, checked-off reminder after
+    var note = el("outNote");
+    note.textContent = "";
+    if (reminder && times.in && !times.out) {
+      note.textContent = reminder;
+    } else if (reminder && times.out) {
+      var c = document.createElement("span");
+      c.className = "check";
+      c.textContent = "✓";
+      note.appendChild(c);
+      note.appendChild(document.createTextNode(reminder));
+    }
     resize();
   }
 
@@ -182,7 +198,7 @@
     };
     m.appendChild(b);
     el("outNote").textContent = "";
-    showMenu("remindMenu", "outTime");
+    showMenu("remindMenu", "outInfo");
   }
 
   /* ---------- Button taps ---------- */
@@ -208,7 +224,7 @@
     } else if (el("outMenu").classList.contains("show")) {
       hideAllMenus(); render();
     } else {
-      showMenu("outMenu", "outTime");
+      showMenu("outMenu", "outInfo");
     }
   };
 
