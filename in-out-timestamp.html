@@ -25,6 +25,10 @@
   #pickMenu, #remindMenu { flex: 0 0 100%; }
   .update { background: #1565c0; }
   .clear  { background: #757575; }
+  .edit   { background: #ef6c00; }
+  .save   { background: #2e7d32; }
+  .cancel { background: #9e9e9e; }
+  .menu input[type=datetime-local] { font-size: 14px; padding: 6px; border: 1px solid #bbb; border-radius: 6px; }
   .choice { background: #6a1b9a; }
   .none   { background: #9e9e9e; }
   .remind { background: #f9a825; color: #222; text-align: left; white-space: normal !important; }
@@ -38,7 +42,13 @@
   <span id="inTime" class="time"></span>
   <span id="inMenu" class="menu">
     <button type="button" class="update" data-key="in">Update</button>
+    <button type="button" class="edit" data-key="in">Edit</button>
     <button type="button" class="clear" data-key="in">Clear</button>
+  </span>
+  <span id="inEdit" class="menu">
+    <input type="datetime-local" id="inInput">
+    <button type="button" class="save" data-key="in">Save</button>
+    <button type="button" class="cancel" data-key="in">Cancel</button>
   </span>
   <span id="pickMenu" class="menu"></span>
 </div>
@@ -51,7 +61,13 @@
   </span>
   <span id="outMenu" class="menu">
     <button type="button" class="update" data-key="out">Update</button>
+    <button type="button" class="edit" data-key="out">Edit</button>
     <button type="button" class="clear" data-key="out">Clear</button>
+  </span>
+  <span id="outEdit" class="menu">
+    <input type="datetime-local" id="outInput">
+    <button type="button" class="save" data-key="out">Save</button>
+    <button type="button" class="cancel" data-key="out">Cancel</button>
   </span>
   <span id="remindMenu" class="menu"></span>
 </div>
@@ -123,12 +139,12 @@
     if (reminder && times.out) lines.push("✓ " + reminder);
     // Pending reminder is saved so it survives reopening
     if (reminder && times.in && !times.out) lines.push("Reminder: " + reminder);
-    return lines.join("\n");
+    return lines.join("\n");   // real line breaks (Tables grid flattens them; full views show separate lines)
   }
 
   /* ---------- Display ---------- */
   function hideAllMenus() {
-    ["inMenu", "outMenu", "pickMenu", "remindMenu"].forEach(function (id) { el(id).classList.remove("show"); });
+    ["inMenu", "outMenu", "pickMenu", "remindMenu", "inEdit", "outEdit"].forEach(function (id) { el(id).classList.remove("show"); });
     el("inTime").style.display = "";
     el("outInfo").style.display = "";
   }
@@ -213,7 +229,7 @@
       times.in = now();
       save();
       if (cfg.reminders.length) showReminderChoices();
-    } else if (el("inMenu").classList.contains("show")) {
+    } else if (el("inMenu").classList.contains("show") || el("inEdit").classList.contains("show")) {
       hideAllMenus(); render();
     } else {
       showMenu("inMenu", "inTime");
@@ -226,7 +242,7 @@
       if (el("remindMenu").classList.contains("show")) { hideAllMenus(); render(); return; } // cancel
       if (reminder) { showReminderConfirm(); }
       else { times.out = now(); save(); }
-    } else if (el("outMenu").classList.contains("show")) {
+    } else if (el("outMenu").classList.contains("show") || el("outEdit").classList.contains("show")) {
       hideAllMenus(); render();
     } else {
       showMenu("outMenu", "outInfo");
@@ -240,6 +256,53 @@
       save();
     };
   });
+  /* ---------- Manual edit ---------- */
+  // Turn a shown time like "1:09 pm Nov 10, 2026" back into a date for the picker
+  function parseShown(text) {
+    var months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+    var t = (text || "").match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap])\.?m/i);
+    var d = (text || "").match(/([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/);
+    if (!d) {
+      var n = (text || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+      if (n) d = [null, months[+n[1] - 1], n[2], n[3].length === 2 ? "20" + n[3] : n[3]];
+    }
+    if (!d) return new Date();
+    var mi = months.indexOf(String(d[1]).toLowerCase().slice(0, 3));
+    if (mi < 0) return new Date();
+    var h = 0, m = 0;
+    if (t) {
+      h = (+t[1]) % 12 + (t[3].toLowerCase() === "p" ? 12 : 0);
+      m = +t[2];
+    }
+    return new Date(+d[3], mi, +d[2], h, m);
+  }
+
+  function toPickerValue(d) {
+    function p(n) { return ("0" + n).slice(-2); }
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+           "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+
+  document.querySelectorAll(".edit").forEach(function (b) {
+    b.onclick = function () {
+      var key = b.getAttribute("data-key");
+      el(key + "Input").value = toPickerValue(parseShown(times[key]));
+      showMenu(key + "Edit", key === "in" ? "inTime" : "outInfo");
+    };
+  });
+  document.querySelectorAll(".save").forEach(function (b) {
+    b.onclick = function () {
+      var key = b.getAttribute("data-key");
+      var v = el(key + "Input").value;           // "2026-11-10T13:09"
+      if (v) times[key] = formatDate(new Date(v), cfg.format);
+      hideAllMenus();
+      save();
+    };
+  });
+  document.querySelectorAll(".cancel").forEach(function (b) {
+    b.onclick = function () { hideAllMenus(); render(); };
+  });
+
   document.querySelectorAll(".clear").forEach(function (b) {
     b.onclick = function () {
       var key = b.getAttribute("data-key");
@@ -264,9 +327,10 @@
 
   function restore(saved) {
     if (!saved || typeof saved !== "string") return;
+    saved = saved.replace(/<br\s*\/?>/gi, "\n");   // treat HTML line breaks as new lines
     times.in  = grab(saved, [cfg.inLabel, "In"]);
     times.out = grab(saved, [cfg.outLabel, "Out"]);
-    var done  = saved.match(/(?:^|\n)✓\s*([^\n\r]*)/);
+    var done  = saved.match(/(?:^|\n|\|\s*)✓\s*([^|\n\r]*)/);
     reminder  = done ? done[1].trim() : grab(saved, ["Reminder"]);
     save();
   }
