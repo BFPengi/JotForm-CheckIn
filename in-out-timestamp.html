@@ -7,18 +7,23 @@
 <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 <style>
   body { font-family: Arial, sans-serif; margin: 0; padding: 4px; background: transparent; }
-  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; height: 52px; }
+  .row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; min-height: 52px; }
   button { border: none; border-radius: 6px; color: #fff; cursor: pointer; font-weight: bold; }
   button:hover { opacity: 0.9; }
-  .sq { width: 52px; height: 52px; font-size: 14px; flex-shrink: 0; }
+  .sq { width: 52px; height: 52px; font-size: 13px; flex-shrink: 0; padding: 2px; line-height: 1.1; word-break: break-word; }
   #inBtn  { background: #2e7d32; }
   #outBtn { background: #c62828; }
   .time { font-size: 14px; color: #333; }
-  .menu { display: none; gap: 6px; }
+  .note { font-size: 13px; color: #8a6d00; font-style: italic; }
+  .menu { display: none; flex-wrap: wrap; gap: 6px; flex: 1; }
   .menu.show { display: flex; }
   .menu button { padding: 8px 12px; font-size: 13px; }
   .update { background: #1565c0; }
   .clear  { background: #757575; }
+  .choice { background: #6a1b9a; }
+  .none   { background: #9e9e9e; }
+  .remind { background: #f9a825; color: #222; text-align: left; max-width: 260px; }
+  .prompt { font-size: 12px; color: #555; width: 100%; }
 </style>
 </head>
 <body>
@@ -30,87 +35,187 @@
     <button type="button" class="update" data-key="in">Update</button>
     <button type="button" class="clear" data-key="in">Clear</button>
   </span>
+  <span id="pickMenu" class="menu"></span>
 </div>
 
 <div class="row">
   <button id="outBtn" class="sq" type="button">OUT</button>
   <span id="outTime" class="time"></span>
+  <span id="outNote" class="note"></span>
   <span id="outMenu" class="menu">
     <button type="button" class="update" data-key="out">Update</button>
     <button type="button" class="clear" data-key="out">Clear</button>
   </span>
+  <span id="remindMenu" class="menu"></span>
 </div>
 
 <script>
+  /* ---------- Settings (filled in from Jotform widget settings) ---------- */
+  var cfg = {
+    inLabel:  "IN",
+    outLabel: "OUT",
+    format:   "h:mm a MMM d, yyyy",
+    reminders: []          // empty = reminder feature off
+  };
+
   var times = { in: "", out: "" };
-
-  // Format: h:mm am/pm mmm d, yyyy  (e.g. 1:05 pm Nov 11, 2026)
-  function now() {
-    var d = new Date();
-    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    var h = d.getHours();
-    var ampm = h >= 12 ? "pm" : "am";
-    h = h % 12 || 12;
-    var mm = ("0" + d.getMinutes()).slice(-2);
-    return h + ":" + mm + " " + ampm + " " +
-           months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
-  }
-
-  // The text that gets saved in the submission
-  // Blank until a button is used. When OUT is recorded, it goes on top.
-  function resultText() {
-    var lines = [];
-    if (times.out) lines.push("Out: " + times.out);
-    if (times.in)  lines.push("In: " + times.in);
-    return lines.join("\n");
-  }
+  var reminder = "";        // chosen reminder ("" = none)
 
   function el(id) { return document.getElementById(id); }
 
-  function render(key) {
-    var t = el(key + "Time");
-    t.textContent = times[key];
+  function setting(name) {
+    try {
+      var v = JFCustomWidget.getWidgetSetting(name);
+      return (v === undefined || v === null) ? "" : String(v).trim();
+    } catch (e) { return ""; }
   }
 
-  function closeMenu(key) {
-    el(key + "Menu").classList.remove("show");
-    el(key + "Time").style.display = "";
+  function loadSettings() {
+    cfg.inLabel  = setting("inLabel")  || cfg.inLabel;
+    cfg.outLabel = setting("outLabel") || cfg.outLabel;
+    cfg.format   = setting("dateFormat") || cfg.format;
+    cfg.reminders = setting("reminders")
+      .split(/[\n,]/)
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s && s.toLowerCase() !== "none"; });
+    el("inBtn").textContent  = cfg.inLabel;
+    el("outBtn").textContent = cfg.outLabel;
   }
 
-  function openMenu(key) {
-    el(key + "Time").style.display = "none";
-    el(key + "Menu").classList.add("show");
+  /* ---------- Date/time formatting ----------
+     Tokens: yyyy yy | MMMM MMM MM M | dd d | EEEE EEE | HH H hh h | mm | ss | a (am/pm) A (AM/PM)
+     Put plain words in [brackets] so they aren't treated as codes, e.g. "MMM d [at] h:mm a" */
+  function formatDate(d, fmt) {
+    var months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var H = d.getHours(), h = H % 12 || 12;
+    function p(n) { return ("0" + n).slice(-2); }
+    var map = {
+      yyyy: d.getFullYear(), yy: String(d.getFullYear()).slice(-2),
+      MMMM: months[d.getMonth()], MMM: months[d.getMonth()].slice(0, 3),
+      MM: p(d.getMonth() + 1), M: d.getMonth() + 1,
+      dd: p(d.getDate()), d: d.getDate(),
+      EEEE: days[d.getDay()], EEE: days[d.getDay()].slice(0, 3),
+      HH: p(H), H: H, hh: p(h), h: h,
+      mm: p(d.getMinutes()), ss: p(d.getSeconds()),
+      a: H >= 12 ? "pm" : "am", A: H >= 12 ? "PM" : "AM"
+    };
+    return fmt.replace(/\[([^\]]*)\]|yyyy|yy|MMMM|MMM|MM|M|EEEE|EEE|dd|d|HH|H|hh|h|mm|ss|a|A/g,
+      function (tok, literal) { return literal !== undefined ? literal : map[tok]; });
+  }
+
+  function now() { return formatDate(new Date(), cfg.format); }
+
+  /* ---------- What gets saved (what Tables shows) ---------- */
+  function resultText() {
+    var lines = [];
+    if (times.out) lines.push(cfg.outLabel + ": " + times.out);
+    if (times.in)  lines.push(cfg.inLabel + ": " + times.in);
+    if (reminder && (times.in || times.out)) lines.push("Reminder: " + reminder);
+    return lines.join("\n");
+  }
+
+  /* ---------- Display ---------- */
+  function hideAllMenus() {
+    ["inMenu", "outMenu", "pickMenu", "remindMenu"].forEach(function (id) { el(id).classList.remove("show"); });
+    el("inTime").style.display = "";
+    el("outTime").style.display = "";
+  }
+
+  function render() {
+    el("inTime").textContent  = times.in;
+    el("outTime").textContent = times.out;
+    // Pending reminder shown on the OUT row until check-out is done
+    el("outNote").textContent = (reminder && times.in && !times.out) ? "Reminder: " + reminder : "";
+    resize();
+  }
+
+  function resize() {
+    if (window.JFCustomWidget) {
+      JFCustomWidget.requestFrameResize({ height: document.body.scrollHeight + 8 });
+    }
   }
 
   function save() {
-    render("in");
-    render("out");
-    if (window.JFCustomWidget) {
-      JFCustomWidget.sendData({ value: resultText() });
-    }
+    render();
+    if (window.JFCustomWidget) JFCustomWidget.sendData({ value: resultText() });
   }
 
-  // First tap records the time. Once a time is recorded it is locked:
-  // tapping again only opens Update / Clear (tap the button again to cancel).
-  function tap(key) {
-    if (!times[key]) {
-      times[key] = now();
+  function showMenu(id, hideTimeId) {
+    hideAllMenus();
+    if (hideTimeId) el(hideTimeId).style.display = "none";
+    el(id).classList.add("show");
+    resize();
+  }
+
+  /* ---------- Reminder choice (after IN) ---------- */
+  function showReminderChoices() {
+    var m = el("pickMenu");
+    m.innerHTML = '<span class="prompt">Check-out reminder?</span>';
+    cfg.reminders.concat(["None"]).forEach(function (opt) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = opt === "None" ? "none" : "choice";
+      b.textContent = opt;
+      b.onclick = function () {
+        reminder = opt === "None" ? "" : opt;
+        hideAllMenus();
+        save();
+      };
+      m.appendChild(b);
+    });
+    showMenu("pickMenu");
+  }
+
+  /* ---------- Reminder confirm (at OUT) ---------- */
+  function showReminderConfirm() {
+    var m = el("remindMenu");
+    m.innerHTML = "";
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "remind";
+    b.textContent = "⚠ " + reminder + " — tap when done";
+    b.onclick = function () {
+      times.out = now();
+      hideAllMenus();
       save();
-    } else if (el(key + "Menu").classList.contains("show")) {
-      closeMenu(key);
-    } else {
-      openMenu(key);
-    }
+    };
+    m.appendChild(b);
+    el("outNote").textContent = "";
+    showMenu("remindMenu", "outTime");
   }
 
-  el("inBtn").onclick  = function () { tap("in"); };
-  el("outBtn").onclick = function () { tap("out"); };
+  /* ---------- Button taps ---------- */
+  el("inBtn").onclick = function () {
+    if (el("pickMenu").classList.contains("show")) return;          // must pick a reminder first
+    if (!times.in) {
+      times.in = now();
+      save();
+      if (cfg.reminders.length) showReminderChoices();
+    } else if (el("inMenu").classList.contains("show")) {
+      hideAllMenus(); render();
+    } else {
+      showMenu("inMenu", "inTime");
+    }
+  };
+
+  el("outBtn").onclick = function () {
+    if (el("pickMenu").classList.contains("show")) return;
+    if (!times.out) {
+      if (el("remindMenu").classList.contains("show")) { hideAllMenus(); render(); return; } // cancel
+      if (reminder) { showReminderConfirm(); }
+      else { times.out = now(); save(); }
+    } else if (el("outMenu").classList.contains("show")) {
+      hideAllMenus(); render();
+    } else {
+      showMenu("outMenu", "outTime");
+    }
+  };
 
   document.querySelectorAll(".update").forEach(function (b) {
     b.onclick = function () {
-      var key = b.getAttribute("data-key");
-      times[key] = now();
-      closeMenu(key);
+      times[b.getAttribute("data-key")] = now();
+      hideAllMenus();
       save();
     };
   });
@@ -118,33 +223,39 @@
     b.onclick = function () {
       var key = b.getAttribute("data-key");
       times[key] = "";
-      closeMenu(key);
+      if (key === "in") reminder = "";   // clearing IN also clears its reminder
+      hideAllMenus();
       save();
     };
   });
 
-  // When a submission is reopened (e.g. from Tables), Jotform passes the
-  // saved value back. Restore the locked times from it.
+  /* ---------- Restore saved values when a submission is reopened ---------- */
+  function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+  function grab(saved, labels) {
+    for (var i = 0; i < labels.length; i++) {
+      var re = new RegExp("(?:^|\\n|\\|\\s*)" + esc(labels[i]) + ":\\s*([^|\\n\\r]*)");
+      var m = saved.match(re);
+      if (m) { var v = m[1].trim(); return v === "—" ? "" : v; }
+    }
+    return "";
+  }
+
   function restore(saved) {
     if (!saved || typeof saved !== "string") return;
-    // Works with both the new layout and older "In: x | Out: y" values
-    function grab(label) {
-      var m = saved.match(new RegExp(label + ":\\s*([^|\\n\\r]*)"));
-      var v = m ? m[1].trim() : "";
-      return v === "—" ? "" : v;
-    }
-    times.in  = grab("In");
-    times.out = grab("Out");
+    times.in  = grab(saved, [cfg.inLabel, "In"]);
+    times.out = grab(saved, [cfg.outLabel, "Out"]);
+    reminder  = grab(saved, ["Reminder"]);
     save();
   }
 
   JFCustomWidget.subscribe("ready", function (data) {
+    loadSettings();
     restore(data && data.value);
-    JFCustomWidget.requestFrameResize({ height: 130 });
+    render();
 
     JFCustomWidget.subscribe("submit", function () {
       JFCustomWidget.sendSubmit({
-        // valid only if at least one time is recorded, so "Required" works
         valid: !!(times.in || times.out),
         value: resultText()
       });
